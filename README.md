@@ -1,4 +1,4 @@
-# twittter-bot
+# twitter-bot
 PoC bot : proof of concept pour un bot twitter de concours
 
  DOCUMENTATION
