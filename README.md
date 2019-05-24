@@ -7,7 +7,7 @@ PoC bot : proof of concept pour un bot twitter de concours
 
  INSTRUCTIONS
  
- remplir le fichier i-example.php et le renommer en i.php
+ renseigner le fichier i.php
  
  mettre en place une crontab : un déclenchement par heure du fichier b.php
  
