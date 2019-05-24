@@ -12,8 +12,8 @@ define('AMIS_NB_FOLLOWER', 1);
 define('NB_TWEET_RAMENER', 1);
 define('PROD', true);
 define('USER_t', 'XXX123');
-define('NB_tweets_recup', 200);
-define('PURGE_tweets_recup', NB_tweets_recup*0.9);
+//la recherche 
+define('SRCH_t', 'rt AND (concours OR gagner OR participer OR remporter)');
 if (! PROD)
 {
 	error_reporting(E_ALL);
