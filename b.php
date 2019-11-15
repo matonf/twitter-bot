@@ -1,29 +1,22 @@
 <?php
 // DOC
 // https://developer.twitter.com/en/docs/tweets/data-dictionary/overview/intro-to-tweet-json
-//define('PROD', false);
-function before()
-{
-	$s = [ 'J en connais un à qui ça plairait', 'Whaou je participe avec plaisir', 'Je mentionne', 'ça va ? ', 'salut', 'coucou', 'hey', 'hello', 'bonjour', 'Respect à', 'Et voilà' ];
-	return $s[array_rand($s)];
-}
 
-function after()
-{
-  $smilies = array('cool et merci', 'GG', 'a+'  ,':-|' ,':-o'  ,':-O' ,':o' ,':O' ,';)'  ,';-)' ,':p'  ,':-p' ,':P'  ,':-P' ,':D' ,':-D' ,'8)' ,'8-)' ,':)'  ,':-)', 'Merci pour ce magnifique cadeau !', 'Merci', ' merci beaucoup !!' );
-  return $smilies[array_rand($smilies)];
-}
-  
 //debug 
 function elog($m)
 {
+	//pause pour passer sous les radars
+	sleep(5);
+	//sortie texte
 	if (! PROD) echo "<font clor=gray>$m</font><br>\n";
+	//sortie fichier
+	//else @file_put_contents(FILE_log, strip_tags($m) . PHP_EOL, FILE_APPEND);
 }
 
 //charges les identifiants tweeter
 require_once("i.php");
 
-//charge la librairie tweeter
+//charge la librairie twitter
 require 'twitteroauth/autoload.php';
 use Abraham\TwitterOAuth\TwitterOAuth;
 
@@ -31,39 +24,53 @@ use Abraham\TwitterOAuth\TwitterOAuth;
 $connection = new TwitterOAuth(CONSUMER_KEY, CONSUMER_SECRET, ACCESS_TOKEN, ACCESS_TOKEN_SECRET);
 	
 //lit le dernier id
-if (! $last_id = file_get_contents(FILE)) $last_id = 0;
-elog("last : $last_id<br>");
+$last_id = 0;
+if (PROD) $last_id = file_get_contents(FILE_id);
+elog(PHP_EOL . 'date: ' . date('d/m/Y H:i'));
 $nb_concours = 0;
 //cherche #concours
-$results = $connection->get('search/tweets', [ 'q' => SRCH_t, 'lang' => 'fr', 'result_type' => 'popular', 'count' => NB_TWEET_RAMENER, 'include_entities' => false, 'since_id' => $last_id]);
+$results = $connection->get('search/tweets', [ 'q' => SRCH_t, 'lang' => 'fr', 'result_type' => 'mixed', 'count' => NB_TWEET_RAMENER, 'include_entities' => false, 'since_id' => $last_id]);
 
 foreach ($results->statuses as $tweet) 
 {
 	$nb_concours++;
-	$texte = $tweet->text;
-	elog("Tweet: " . $texte);
+	$texte = null;
+	//gestion des tweet étendus
+	if (isset($tweet->extended_tweet->full_text)) $texte = $tweet->extended_tweet->full_text;
+	else $texte = $tweet->text;
+	
+	//écrit le tweet sans les retours chariots
+	elog('tweet: ' . str_replace(PHP_EOL, ' ', $texte));
 	
 	//1-favorise le tweet
 	if (PROD) $connection->post('favorites/create', [ 'id' => $tweet->id_str ]);
 	elog('favori: <a target=_blank href=https://twitter.com/' . $tweet->user->screen_name . '/status/' . $tweet->id_str . '>' . $tweet->id_str . '</a>');
-	
+		
 	//2-rt le tweet
 	if (PROD) $connection->post('statuses/retweet', [ 'id' => $tweet->id_str]);
 	elog('retweet: ' . $tweet->id_str);
-	
+		
 	//3-prépare un commentaire avec des mentions @XX @YY @ZZ si la mention est nécessaire uniquement
-	if (strpos(strtolower($texte), 'partage') > 1 || strpos(strtolower($texte), 'identifie') > 1 || strpos(strtolower($texte), 'mention') > 1 || strpos(strtolower($texte), 'répond') > 1) $mentionner = true;
-	else $mentionner = false;
+	$mentionner = false;
+	foreach ($mentions_r as $val_r) 
+	{
+		if (stripos($texte, $val_r)) 
+		{
+			$mentionner = true;
+			break;
+		}
+	}	
 	
-	if ($mentionner)
+	if ($mentionner && AMIS_NB_FOLLOWER)
 	{
 		$users = $connection->get('followers/list', [ 'user_id' => $tweet->user->id_str, 'count' => AMIS_NB_FOLLOWER ]);
 		$nom_commentaire = null;
 		foreach ($users->users as $user) $nom_commentaire .= '@' . $user->screen_name . ' ';
 	}
+
 		
 	//4-follow le compte
-	if (PROD) $connection->post('friendships/create', [ 'screen_name' => $tweet->user->screen_name, 'follow' => 'false']);
+	if (PROD) $connection->post('friendships/create', [ 'screen_name' => $tweet->user->screen_name, 'follow' => 'true']);
 	elog('follow: ' . $tweet->user->screen_name);
 	
 	//5-follow les comptes associés dans le tweet
@@ -89,12 +96,12 @@ foreach ($results->statuses as $tweet)
 		}				
 		
 		//détecte la fin du nom
-		if ($lettre ==  '.' ||  $lettre ==  ',' || $lettre ==  ' ' || ($j == strlen($texte)-1))
+		if ($lettre ==  ':' ||  $lettre ==  '.' ||  $lettre ==  ',' || $lettre ==  ' ' || ($j == strlen($texte)-1))
 		{ 
 				if ($compter_nom) 
 				{
 					elog('follow sup: ' . $nom);
-					if (PROD) $connection->post('friendships/create', [ 'screen_name' => $nom, 'follow' => 'false']);
+					if (PROD) $connection->post('friendships/create', [ 'screen_name' => $nom, 'follow' => 'true']);
 				}
 				//raz
 				$compter_nom = false;
@@ -103,26 +110,26 @@ foreach ($results->statuses as $tweet)
 		
 		if ($compter_nom && $lettre != '@') $nom .= $lettre;
 		if ($compter_hashtag) $hashtag .= $lettre;
-		
 	}
-	
+
+		
 	//3 bis-poste un commentaire avec des mentions @XX @YY @ZZ
 	if ($mentionner)
 	{
-		//stoppe pour 1 seconde
-		sleep(1);
-		$commentaire = '@' . $tweet->user->screen_name . ' ' . before() . ' '  . trim($nom_commentaire) . ' ' . after() . ' ' . trim($hashtag);
-		if (PROD) $connection->post('statuses/update', ['status' => trim($commentaire), 'in_reply_to_status_id' => $tweet->id_str ]);
-		elog('tweet: ' . $commentaire);
+		if (AMIS_NB_FOLLOWER || $hashtag != "")
+		{
+			//format du message : @nom_du_posteur_original @noms_des_amis #hastags
+			$messg = '@' . $tweet->user->screen_name . ' ' . trim($nom_commentaire) . ' ' . trim($hashtag);
+			if (PROD) $connection->post('statuses/update', ['status' => trim($messg), 'in_reply_to_status_id' => $tweet->id_str, 'auto_populate_reply_metadata' => false ]);
+			elog('comment: ' . $messg);
+		}
 	}
-	elog(" ");
-	//stoppe pour 7 secondes
-	sleep(7);
+
+
 }
 if ($nb_concours) 
 {
 	//stocke le dernier id lu
-	if (PROD) file_put_contents(FILE, $tweet->id_str);
-	elog("last : " . $tweet->id_str);
+	if (PROD) file_put_contents(FILE_id, $tweet->id_str);
 }
 ?>
