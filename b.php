@@ -8,10 +8,11 @@ function elog($m)
 	//pause pour passer sous les radars
 	sleep(5);
 	//sortie texte
-	if (! PROD) echo "<font clor=gray>$m</font><br>\n";
+	if (PROD === false) echo "<font color=gray>$m</font><br>\n";
 	//sortie fichier
 	//else @file_put_contents(FILE_log, strip_tags($m) . PHP_EOL, FILE_APPEND);
 }
+
 
 //charges les identifiants tweeter
 require_once("i.php");
@@ -25,15 +26,15 @@ $connection = new TwitterOAuth(CONSUMER_KEY, CONSUMER_SECRET, ACCESS_TOKEN, ACCE
 	
 //lit le dernier id
 $last_id = 0;
-if (PROD) $last_id = file_get_contents(FILE_id);
+$last_id = @file_get_contents(FILE_id);
 elog(PHP_EOL . 'date: ' . date('d/m/Y H:i'));
-$nb_concours = 0;
+$concours = false;
 //cherche #concours
 $results = $connection->get('search/tweets', [ 'q' => SRCH_t, 'lang' => 'fr', 'result_type' => 'mixed', 'count' => NB_TWEET_RAMENER, 'include_entities' => false, 'since_id' => $last_id]);
 
 foreach ($results->statuses as $tweet) 
 {
-	$nb_concours++;
+	$concours = true;
 	$texte = null;
 	//gestion des tweet étendus
 	if (isset($tweet->extended_tweet->full_text)) $texte = $tweet->extended_tweet->full_text;
@@ -42,11 +43,11 @@ foreach ($results->statuses as $tweet)
 	//écrit le tweet sans les retours chariots
 	elog('tweet: ' . str_replace(PHP_EOL, ' ', $texte));
 	
-	//1-favorise le tweet
+	//1-FAV le tweet
 	if (PROD) $connection->post('favorites/create', [ 'id' => $tweet->id_str ]);
 	elog('favori: <a target=_blank href=https://twitter.com/' . $tweet->user->screen_name . '/status/' . $tweet->id_str . '>' . $tweet->id_str . '</a>');
 		
-	//2-rt le tweet
+	//2-RT le tweet
 	if (PROD) $connection->post('statuses/retweet', [ 'id' => $tweet->id_str]);
 	elog('retweet: ' . $tweet->id_str);
 		
@@ -69,11 +70,11 @@ foreach ($results->statuses as $tweet)
 	}
 
 		
-	//4-follow le compte
+	//4-FOLLOW le compte
 	if (PROD) $connection->post('friendships/create', [ 'screen_name' => $tweet->user->screen_name, 'follow' => 'true']);
 	elog('follow: ' . $tweet->user->screen_name);
 	
-	//5-follow les comptes associés dans le tweet
+	//5-FOLLOW les comptes associés dans le tweet
 	//raz initiales
 	$compter_nom = false;
 	$compter_hashtag = false;
@@ -124,12 +125,25 @@ foreach ($results->statuses as $tweet)
 			elog('comment: ' . $messg);
 		}
 	}
-
-
 }
-if ($nb_concours) 
+
+
+//on a participé à un concours ou plusieurs
+if ($concours) 
 {
 	//stocke le dernier id lu
 	if (PROD) file_put_contents(FILE_id, $tweet->id_str);
+}
+else //on a rien fait
+{
+	//cherche tout sauf #concours, on va spammer du contenu populaire
+	$results_spam = $connection->get('search/tweets', [ 'q' => 'info OR média OR actu', 'lang' => 'fr', 'result_type' => 'popular', 'count' => NB_TWEET_RAMENER, 'include_entities' => false, 'since_id' => $last_id]);
+	elog("cherche un retweet populaire pour spam");
+	foreach ($results_spam->statuses as $tweet_spam) 
+	{
+		//RT le tweet
+		if (PROD) $connection->post('statuses/retweet', [ 'id' => $tweet_spam->id_str]);
+		elog('retweet spam: <a target=_blank href=https://twitter.com/' . $tweet_spam->user->screen_name . '/status/' . $tweet_spam->id_str . '>' . $tweet_spam->id_str . '</a>');
+	}	
 }
 ?>
