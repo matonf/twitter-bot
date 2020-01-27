@@ -25,20 +25,20 @@ use Abraham\TwitterOAuth\TwitterOAuth;
 $connection = new TwitterOAuth(CONSUMER_KEY, CONSUMER_SECRET, ACCESS_TOKEN, ACCESS_TOKEN_SECRET);
 	
 //lit le dernier id
-$last_id = 0;
 $last_id = @file_get_contents(FILE_id);
-elog(PHP_EOL . 'date: ' . date('d/m/Y H:i'));
+elog(PHP_EOL . 'date: ' . date('d/m/Y à H:i'));
 $concours = false;
-//cherche #concours
-$results = $connection->get('search/tweets', [ 'q' => SRCH_t, 'lang' => 'fr', 'result_type' => 'mixed', 'count' => NB_TWEET_RAMENER, 'include_entities' => false, 'since_id' => $last_id]);
+//cherche #concours etc
+$results = $connection->get('search/tweets', [ 'tweet_mode' => 'extended', 'q' => SRCH_t, 'lang' => 'fr', 'result_type' => 'mixed', 'count' => NB_TWEET_RAMENER, 'include_entities' => false, 'since_id' => $last_id ] );
 
 foreach ($results->statuses as $tweet) 
 {
 	$concours = true;
 	$texte = null;
 	//gestion des tweet étendus
-	if (isset($tweet->extended_tweet->full_text)) $texte = $tweet->extended_tweet->full_text;
+	if (isset($tweet->retweeted_status->full_text)) $texte = $tweet->retweeted_status->full_text;
 	else $texte = $tweet->text;
+	//elog('debug extended : ' . $tweet->retweeted_status->full_text);
 	
 	//écrit le tweet sans les retours chariots
 	elog('tweet: ' . str_replace(PHP_EOL, ' ', $texte));
@@ -60,15 +60,17 @@ foreach ($results->statuses as $tweet)
 			$mentionner = true;
 			break;
 		}
-	}	
-	
+	}
+
+	$noms = null;	
 	if ($mentionner && AMIS_NB_FOLLOWER)
 	{
 		$users = $connection->get('followers/list', [ 'user_id' => $tweet->user->id_str, 'count' => AMIS_NB_FOLLOWER ]);
-		$nom_commentaire = null;
-		foreach ($users->users as $user) $nom_commentaire .= '@' . $user->screen_name . ' ';
+		foreach ($users->users as $user) $noms .= '@' . $user->screen_name . ' ';
 	}
-
+	elseif ($mentionner && defined('TWEETOS')) $noms = TWEETOS . ' ';
+	if (! is_null($noms)) $nom_commentaire = " j'invite à participer " . $noms;
+	else $nom_commentaire = null;
 		
 	//4-FOLLOW le compte
 	if (PROD) $connection->post('friendships/create', [ 'screen_name' => $tweet->user->screen_name, 'follow' => 'true']);
@@ -113,7 +115,7 @@ foreach ($results->statuses as $tweet)
 		if ($compter_hashtag) $hashtag .= $lettre;
 	}
 
-		
+	
 	//3 bis-poste un commentaire avec des mentions @XX @YY @ZZ
 	if ($mentionner)
 	{
@@ -137,8 +139,8 @@ if ($concours)
 else //on a rien fait
 {
 	//cherche tout sauf #concours, on va spammer du contenu populaire
-	$results_spam = $connection->get('search/tweets', [ 'q' => 'info OR média OR actu', 'lang' => 'fr', 'result_type' => 'popular', 'count' => NB_TWEET_RAMENER, 'include_entities' => false, 'since_id' => $last_id]);
-	elog("cherche un retweet populaire pour spam");
+	$results_spam = $connection->get('search/tweets', [ 'q' => 'info OR média OR actu', 'lang' => 'fr', 'result_type' => 'popular', 'count' => NB_TWEET_RAMENER, 'include_entities' => false]);
+	elog('cherche un retweet populaire pour spam');
 	foreach ($results_spam->statuses as $tweet_spam) 
 	{
 		//RT le tweet
