@@ -12,6 +12,7 @@ define('AMIS_NB_FOLLOWER', 1);
 define('NB_TWEET_RAMENER', 1);
 define('PROD', true);
 define('USER_t', 'XXX123');
+define('TWEETOS', '@XYZ');
 //la recherche 
 define('SRCH_t', 'rt AND (concours OR gagner OR participer OR remporter)');
 if (! PROD)
