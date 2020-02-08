@@ -13,7 +13,6 @@ function elog($m)
 	//else @file_put_contents(FILE_log, strip_tags($m) . PHP_EOL, FILE_APPEND);
 }
 
-
 //charges les identifiants tweeter
 require_once("i.php");
 
@@ -26,7 +25,7 @@ $connection = new TwitterOAuth(CONSUMER_KEY, CONSUMER_SECRET, ACCESS_TOKEN, ACCE
 	
 //lit le dernier id
 $last_id = @file_get_contents(FILE_id);
-elog(PHP_EOL . 'date: ' . date('d/m/Y à H:i'));
+elog('date: ' . date('d/m/Y à H:i'));
 $concours = false;
 //cherche #concours etc
 $results = $connection->get('search/tweets', [ 'tweet_mode' => 'extended', 'q' => SRCH_t, 'lang' => 'fr', 'result_type' => 'mixed', 'count' => NB_TWEET_RAMENER, 'include_entities' => false, 'since_id' => $last_id ] );
@@ -34,11 +33,18 @@ $results = $connection->get('search/tweets', [ 'tweet_mode' => 'extended', 'q' =
 foreach ($results->statuses as $tweet) 
 {
 	$concours = true;
+	
+	//détecte un retweet
+	if (isset($tweet->retweeted_status)) 
+	{
+		//réaffecte le tweet original
+		$tweet = $tweet->retweeted_status;
+	}
+
 	$texte = null;
-	//gestion des tweet étendus
-	if (isset($tweet->retweeted_status->full_text)) $texte = $tweet->retweeted_status->full_text;
+	//gestion des textes étendus
+	if (isset($tweet->extended_tweet->full_text)) $texte = $tweet->extended_tweet->full_text;
 	else $texte = $tweet->text;
-	//elog('debug extended : ' . $tweet->retweeted_status->full_text);
 	
 	//écrit le tweet sans les retours chariots
 	elog('tweet: ' . str_replace(PHP_EOL, ' ', $texte));
@@ -99,8 +105,8 @@ foreach ($results->statuses as $tweet)
 		}				
 		
 		//détecte la fin du nom
-		if ($lettre ==  ':' ||  $lettre ==  '.' ||  $lettre ==  ',' || $lettre ==  ' ' || ($j == strlen($texte)-1))
-		{ 
+		if ($lettre ==  '!' || $lettre ==  ':' ||  $lettre ==  '.' ||  $lettre ==  ',' || $lettre ==  ' ' || ($j == strlen($texte)-1))
+		{
 				if ($compter_nom) 
 				{
 					elog('follow sup: ' . $nom);
@@ -114,7 +120,6 @@ foreach ($results->statuses as $tweet)
 		if ($compter_nom && $lettre != '@') $nom .= $lettre;
 		if ($compter_hashtag) $hashtag .= $lettre;
 	}
-
 	
 	//3 bis-poste un commentaire avec des mentions @XX @YY @ZZ
 	if ($mentionner)
@@ -128,7 +133,6 @@ foreach ($results->statuses as $tweet)
 		}
 	}
 }
-
 
 //on a participé à un concours ou plusieurs
 if ($concours) 
