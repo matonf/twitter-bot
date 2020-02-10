@@ -6,11 +6,11 @@
 function elog($m)
 {
 	//pause pour passer sous les radars
-	sleep(5);
+	sleep(rand(3,9));
 	//sortie texte
 	if (PROD === false) echo "<font color=gray>$m</font><br>\n";
 	//sortie fichier
-	//else @file_put_contents(FILE_log, strip_tags($m) . PHP_EOL, FILE_APPEND);
+	else @file_put_contents(FILE_log, strip_tags($m) . PHP_EOL, FILE_APPEND);
 }
 
 //charges les identifiants tweeter
@@ -26,31 +26,54 @@ $connection = new TwitterOAuth(CONSUMER_KEY, CONSUMER_SECRET, ACCESS_TOKEN, ACCE
 //lit le dernier id
 $last_id = @file_get_contents(FILE_id);
 elog('date: ' . date('d/m/Y à H:i'));
-$concours = false;
+$nb_concours = 0;
 //cherche #concours etc
-$results = $connection->get('search/tweets', [ 'tweet_mode' => 'extended', 'q' => SRCH_t, 'lang' => 'fr', 'result_type' => 'mixed', 'count' => NB_TWEET_RAMENER, 'include_entities' => false, 'since_id' => $last_id ] );
+$results = $connection->get('search/tweets', [ 'tweet_mode' => 'extended', 'q' => SRCH_t, 'lang' => 'fr', 'result_type' => 'mixed', 'count' => 3*NB_TWEET_RAMENER, 'include_entities' => false, 'since_id' => $last_id ] );
 
-foreach ($results->statuses as $tweet) 
+/*
+//récupère les derniers tweets
+$favs = $connection->get('statuses/user_timeline', [ 'screen_name' => USER_t, 'count' => 50, 'trim_user' => false]);
+$tab_fav = array();
+foreach ($favs as $fav) 
 {
-	$concours = true;
-	
+	array_push($tab_fav, $fav->id_str);
+}
+*/
+
+//parcours des tweet à faire
+foreach ($results->statuses as $tweet) 
+{	
 	//détecte un retweet
 	if (isset($tweet->retweeted_status)) 
 	{
 		//réaffecte le tweet original
 		$tweet = $tweet->retweeted_status;
 	}
-
-	$texte = null;
-	//gestion des textes étendus
-	if (isset($tweet->extended_tweet->full_text)) $texte = $tweet->extended_tweet->full_text;
-	else $texte = $tweet->text;
+	
+	//récupère le texte pour plusieurs traitements ultérieurs
+	$texte = $tweet->full_text;
+	
+	/*
+	if (in_array($tweet->id_str, $tab_fav))
+	{
+		elog("pré-détection, retweet déjà fait: " . $tweet->id_str);
+		continue;
+	}
+	*/
 	
 	//écrit le tweet sans les retours chariots
 	elog('tweet: ' . str_replace(PHP_EOL, ' ', $texte));
 	
 	//1-FAV le tweet
-	if (PROD) $connection->post('favorites/create', [ 'id' => $tweet->id_str ]);
+	if (PROD) $retour_post = $connection->post('favorites/create', [ 'id' => $tweet->id_str ]);
+	//détection d'erreur force à enchaîner la boucle
+	if (count($retour_post->errors)) 
+	{
+		elog("Erreur, retour API: FAV déjà fait: " . $tweet->id_str);
+		continue;
+	}
+
+	$nb_concours++;
 	elog('favori: <a target=_blank href=https://twitter.com/' . $tweet->user->screen_name . '/status/' . $tweet->id_str . '>' . $tweet->id_str . '</a>');
 		
 	//2-RT le tweet
@@ -69,12 +92,15 @@ foreach ($results->statuses as $tweet)
 	}
 
 	$noms = null;	
-	if ($mentionner && AMIS_NB_FOLLOWER)
+	if ($mentionner)
 	{
-		$users = $connection->get('followers/list', [ 'user_id' => $tweet->user->id_str, 'count' => AMIS_NB_FOLLOWER ]);
-		foreach ($users->users as $user) $noms .= '@' . $user->screen_name . ' ';
+		if (AMIS_NB_FOLLOWER)
+		{
+			$users = $connection->get('followers/list', [ 'user_id' => $tweet->user->id_str, 'count' => AMIS_NB_FOLLOWER ]);
+			foreach ($users->users as $user) $noms .= '@' . $user->screen_name . ' ';
+		}
+		elseif (defined('TWEETOS')) $noms = TWEETOS . ' ';
 	}
-	elseif ($mentionner && defined('TWEETOS')) $noms = TWEETOS . ' ';
 	if (! is_null($noms)) $nom_commentaire = " j'invite à participer " . $noms;
 	else $nom_commentaire = null;
 		
@@ -124,7 +150,7 @@ foreach ($results->statuses as $tweet)
 	//3 bis-poste un commentaire avec des mentions @XX @YY @ZZ
 	if ($mentionner)
 	{
-		if (AMIS_NB_FOLLOWER || $hashtag != "")
+		if (! is_null($nom_commentaire))
 		{
 			//format du message : @nom_du_posteur_original @noms_des_amis #hastags
 			$messg = '@' . $tweet->user->screen_name . ' ' . trim($nom_commentaire) . ' ' . trim($hashtag);
@@ -132,10 +158,13 @@ foreach ($results->statuses as $tweet)
 			elog('comment: ' . $messg);
 		}
 	}
+	
+	//on a posté autant que désiré, on sort
+	if (NB_TWEET_RAMENER == $nb_concours) break;
 }
 
 //on a participé à un concours ou plusieurs
-if ($concours) 
+if ($nb_concours) 
 {
 	//stocke le dernier id lu
 	if (PROD) file_put_contents(FILE_id, $tweet->id_str);
