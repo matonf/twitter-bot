@@ -16,6 +16,10 @@ function elog($m)
 //charges les identifiants tweeter
 require_once("i.php");
 
+//purge la log le premier de chaque mois
+if (date("jG") == "10") @unlink(FILE_log);
+
+
 //charge la librairie twitter
 require 'twitteroauth/autoload.php';
 use Abraham\TwitterOAuth\TwitterOAuth;
@@ -24,21 +28,13 @@ use Abraham\TwitterOAuth\TwitterOAuth;
 $connection = new TwitterOAuth(CONSUMER_KEY, CONSUMER_SECRET, ACCESS_TOKEN, ACCESS_TOKEN_SECRET);
 	
 //lit le dernier id
-$last_id = @file_get_contents(FILE_id);
+//$last_id = @file_get_contents(FILE_id);
 elog('date: ' . date('d/m/Y à H:i'));
 $nb_concours = 0;
 //cherche #concours etc
-$results = $connection->get('search/tweets', [ 'tweet_mode' => 'extended', 'q' => SRCH_t, 'lang' => 'fr', 'result_type' => 'mixed', 'count' => 3*NB_TWEET_RAMENER, 'include_entities' => false, 'since_id' => $last_id ] );
+$results = $connection->get('search/tweets', [ 'tweet_mode' => 'extended', 'q' => SRCH_t, 'lang' => 'fr', 'result_type' => 'mixed', 'count' => 50, 'include_entities' => false ] ); //, 'since_id' => $last_id ] );
 
-/*
-//récupère les derniers tweets
-$favs = $connection->get('statuses/user_timeline', [ 'screen_name' => USER_t, 'count' => 50, 'trim_user' => false]);
-$tab_fav = array();
-foreach ($favs as $fav) 
-{
-	array_push($tab_fav, $fav->id_str);
-}
-*/
+
 
 //parcours des tweet à faire
 foreach ($results->statuses as $tweet) 
@@ -53,16 +49,6 @@ foreach ($results->statuses as $tweet)
 	//récupère le texte pour plusieurs traitements ultérieurs
 	$texte = $tweet->full_text;
 	
-	/*
-	if (in_array($tweet->id_str, $tab_fav))
-	{
-		elog("pré-détection, retweet déjà fait: " . $tweet->id_str);
-		continue;
-	}
-	*/
-	
-	//écrit le tweet sans les retours chariots
-	elog('tweet: ' . str_replace(PHP_EOL, ' ', $texte));
 	
 	//1-FAV le tweet
 	if (PROD) $retour_post = $connection->post('favorites/create', [ 'id' => $tweet->id_str ]);
@@ -74,6 +60,8 @@ foreach ($results->statuses as $tweet)
 	}
 
 	$nb_concours++;
+	//écrit le tweet sans les retours chariots
+	elog('tweet: ' . str_replace(PHP_EOL, ' ', $texte));
 	elog('favori: <a target=_blank href=https://twitter.com/' . $tweet->user->screen_name . '/status/' . $tweet->id_str . '>' . $tweet->id_str . '</a>');
 		
 	//2-RT le tweet
@@ -99,7 +87,11 @@ foreach ($results->statuses as $tweet)
 			$users = $connection->get('followers/list', [ 'user_id' => $tweet->user->id_str, 'count' => AMIS_NB_FOLLOWER ]);
 			foreach ($users->users as $user) $noms .= '@' . $user->screen_name . ' ';
 		}
-		elseif (defined('TWEETOS')) $noms = TWEETOS . ' ';
+		elseif (defined('TWEETOS')) 
+		{
+			$tab_noms_tweetos = explode(',', TWEETOS);
+			$noms =  $tab_noms_tweetos[rand(0, count($tab_noms_tweetos)-1)] . ' ';
+		}
 	}
 	if (! is_null($noms)) $nom_commentaire = " j'invite à participer " . $noms;
 	else $nom_commentaire = null;
@@ -131,7 +123,7 @@ foreach ($results->statuses as $tweet)
 		}				
 		
 		//détecte la fin du nom
-		if ($lettre ==  '!' || $lettre ==  ':' ||  $lettre ==  '.' ||  $lettre ==  ',' || $lettre ==  ' ' || ($j == strlen($texte)-1))
+		if ($lettre ==  "\n" || $lettre ==  '!' || $lettre ==  ':' ||  $lettre ==  '.' ||  $lettre ==  ',' || $lettre ==  ' ' || ($j == strlen($texte)-1))
 		{
 				if ($compter_nom) 
 				{
@@ -167,7 +159,7 @@ foreach ($results->statuses as $tweet)
 if ($nb_concours) 
 {
 	//stocke le dernier id lu
-	if (PROD) file_put_contents(FILE_id, $tweet->id_str);
+	//if (PROD) file_put_contents(FILE_id, $tweet->id_str);
 }
 else //on a rien fait
 {
@@ -182,3 +174,4 @@ else //on a rien fait
 	}	
 }
 ?>
+		
