@@ -13,6 +13,13 @@ function elog($m)
 	else @file_put_contents(FILE_log, strip_tags($m) . PHP_EOL, FILE_APPEND);
 }
 
+function getsmil()
+{
+	// source : https://freek.dev/376-using-emoji-in-phphttps://freek.dev/376-using-emoji-in-php
+	$smilies = ["\u{1F603}", "\u{1F340}" , "\u{1F600}", "\u{1F4AA}", "\u{1F44D}", "\u{1F64C}"];
+	return $smilies[rand(0,count($smilies)-1)];
+}
+
 //charges les identifiants tweeter
 require_once("i.php");
 
@@ -145,6 +152,7 @@ foreach ($results->statuses as $tweet)
 		if (! is_null($nom_commentaire))
 		{
 			//format du message : @nom_du_posteur_original @noms_des_amis #hastags
+			if ($hashtag == "") $hashtag = getsmil();
 			$messg = '@' . $tweet->user->screen_name . ' ' . trim($nom_commentaire) . ' ' . trim($hashtag);
 			if (PROD) $connection->post('statuses/update', ['status' => trim($messg), 'in_reply_to_status_id' => $tweet->id_str, 'auto_populate_reply_metadata' => false ]);
 			elog('comment: ' . $messg);
