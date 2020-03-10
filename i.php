@@ -4,8 +4,6 @@ define('CONSUMER_KEY', '');
 define('CONSUMER_SECRET', '');
 define('ACCESS_TOKEN', '');
 define('ACCESS_TOKEN_SECRET', '');
-//nombre de follower à ramener d'un post
-define('AMIS_NB_FOLLOWER', 0);
 //nombe de tweet à monitorer à chaque requête
 define('NB_TWEET_RAMENER', 1);
 define('PROD', true);
