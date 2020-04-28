@@ -3,10 +3,13 @@
 // https://developer.twitter.com/en/docs/tweets/data-dictionary/overview/intro-to-tweet-json
 
 //debug 
-function elog($m)
+function elog($m, $t=0)
 {
+	//tempo aléatoire
+	if ($t == 0) $t = rand(2,5);
 	//pause pour passer sous les radars
-	sleep(rand(2,5));
+	sleep($t);
+	$m = date('d/m/Y à H:i ') . $m;
 	//sortie texte
 	if (PROD === false) echo "<font color=gray>$m</font><br>\n";
 	//sortie fichier
@@ -45,12 +48,33 @@ use Abraham\TwitterOAuth\TwitterOAuth;
 //se connecte à tweeter
 $connection = new TwitterOAuth(CONSUMER_KEY, CONSUMER_SECRET, ACCESS_TOKEN, ACCESS_TOKEN_SECRET);
 
+
+//cherche #concours 
+$results = $connection->get('search/tweets', [ 'tweet_mode' => 'extended', 'q' => SRCH_t, 'lang' => 'fr', 'result_type' => 'popular', 'count' => 50, 'include_entities' => false ] ); 
+testeRequete($connection->getLastHttpCode(), __LINE__ );
+
 //quelques variables initialisées
 $hashtags_inutiles = array("#RT", "#FOLLOW", "#FAV", "#CONCOURS", "#PAYPAL", "#GIVEAWAY");
 $nb_concours = 0;
-//cherche #concours etc
-$results = $connection->get('search/tweets', [ 'tweet_mode' => 'extended', 'q' => SRCH_t, 'lang' => 'fr', 'result_type' => 'mixed', 'count' => 50, 'include_entities' => false ] ); //, 'since_id' => $last_id ] );
-testeRequete($connection->getLastHttpCode(), __LINE__ );
+if (defined('MENTIONS')) $mentions_r = explode(',', MENTIONS);
+else $mentions_r = array();
+if (defined('TWEETOS')) $tab_noms_tweetos = explode(',', TWEETOS);
+$tab_listes_ignores = array();
+if (defined('LISTE_IGNORES')) 
+{
+	$tab_listes = explode(',', LISTE_IGNORES);
+	foreach ($tab_listes as $liste)
+	{
+		//récupère les follow de la liste courante
+		$ignores = $connection->get('lists/members', [ 'list_id' => $liste, 'count' => 5000, 'include_entities' => false ]);
+		//traite les suivis de la liste
+		foreach ($ignores->users as $ignore)
+		{
+			//les ajoute au tableau général
+			array_push($tab_listes_ignores, $ignore->screen_name);
+		}
+	}
+}
 
 //parcours des tweet à faire
 foreach ($results->statuses as $tweet) 
@@ -62,9 +86,15 @@ foreach ($results->statuses as $tweet)
 		$tweet = $tweet->retweeted_status;
 	}
 	
+	//regarde si le tweetos est ignoré depuis les listes, si oui on passe au tweet suivant
+	if (in_array($tweet->user->screen_name, $tab_listes_ignores)) 
+	{
+		//echo $tweet->full_text . "<br>par " . $tweet->user->screen_name . " ignoré !<br>";
+		continue;
+	}
+	
 	//récupère le texte pour plusieurs traitements ultérieurs
 	$texte = $tweet->full_text;
-	
 	
 	//1-FAV le tweet
 	$retour_post = $connection->post('favorites/create', [ 'id' => $tweet->id_str ]);
@@ -72,15 +102,13 @@ foreach ($results->statuses as $tweet)
 	//détection d'erreur force à enchaîner la boucle
 	if (count($retour_post->errors)) 
 	{
-		//pause forcée
-		sleep (1);
 		continue;
 	}
 	testeRequete($connection->getLastHttpCode(), __LINE__ );
 
 	$nb_concours++;
 	//écrit l'id du tweet 
-	elog('FAV: <a target=_blank href=https://twitter.com/' . $tweet->user->screen_name . '/status/' . $tweet->id_str . '>' . $tweet->id_str . '</a>');
+	elog('FAV: ' . $tweet->id_str);
 		
 	//2-RT le tweet
 	$connection->post('statuses/retweet', [ 'id' => $tweet->id_str]);
@@ -89,35 +117,46 @@ foreach ($results->statuses as $tweet)
 		
 	//3-prépare un commentaire avec des mentions @XX @YY @ZZ si la mention est nécessaire uniquement
 	$mentionner = false;
-	foreach ($mentions_r as $val_r) 
+	
+	if (defined('MENTIONS')) 
 	{
-		if (stripos($texte, $val_r)) 
+		//$mentions_r = explode(',', MENTIONS);
+		foreach ($mentions_r as $val_r) 
 		{
-			$mentionner = true;
-			break;
+			if (stripos($texte, $val_r)) 
+			{
+				$mentionner = true;
+				break;
+			}
 		}
 	}
-
-	$noms = null;	
+	
+	$nom = null;	
 	if ($mentionner)
 	{
-		if (AMIS_NB_FOLLOWER)
+		//amis définis en dur dans la configuration
+		if (defined('TWEETOS')) 
 		{
-			$users = $connection->get('followers/list', [ 'user_id' => $tweet->user->id_str, 'count' => AMIS_NB_FOLLOWER ]);
-			testeRequete($connection->getLastHttpCode(), __LINE__ );
-			foreach ($users->users as $user) $noms .= '@' . $user->screen_name . ' ';
+			//$tab_noms_tweetos = explode(',', TWEETOS);
+			$nom =  $tab_noms_tweetos[rand(0, count($tab_noms_tweetos)-1)];
 		}
-		elseif (defined('TWEETOS')) 
+		else
 		{
-			$tab_noms_tweetos = explode(',', TWEETOS);
-			$noms =  $tab_noms_tweetos[rand(0, count($tab_noms_tweetos)-1)] . ' ';
+			//amis qui me suivent
+			$results_followers = $connection->get('followers/ids', [ 'user_id' => USER_t ]);
+			testeRequete($connection->getLastHttpCode(), __LINE__ );
+			$followers = $results_followers->ids;
+			//collecte des données sur le follower		
+			$follower = $connection->get('users/show', [ 'user_id' => $followers[rand(0,count($followers)-1)], 'include_entities' => false ]);
+			testeRequete($connection->getLastHttpCode(), __LINE__ );
+			$nom = '@' . $follower->screen_name;
 		}
 	}
-	if (! is_null($noms)) $nom_commentaire = " j'invite à participer " . $noms;
+	if (! is_null($nom)) $nom_commentaire = " j'invite à participer " . $nom;
 	else $nom_commentaire = null;
 		
 	//4-FOLLOW le compte
-	$connection->post('friendships/create', [ 'screen_name' => $tweet->user->screen_name, 'follow' => 'true']);
+	$connection->post('friendships/create', [ 'screen_name' => $tweet->user->screen_name]);
 	elog('FOLLOW: ' . $tweet->user->screen_name);
 	
 	//5-FOLLOW les comptes associés dans le tweet
@@ -147,7 +186,7 @@ foreach ($results->statuses as $tweet)
 		{
 				if ($compter_nom) 
 				{
-					$connection->post('friendships/create', [ 'screen_name' => $nom, 'follow' => 'true']);
+					$connection->post('friendships/create', [ 'screen_name' => $nom]);
 					elog('FOLLOW: ' . $nom);
 				}
 				//raz
@@ -183,14 +222,13 @@ foreach ($results->statuses as $tweet)
 if ($nb_concours == 0) 
 {
 	//cherche tout sauf #concours, on va spammer du contenu populaire
-	$results_spam = $connection->get('search/tweets', [ 'q' => 'info OR média OR actu', 'lang' => 'fr', 'result_type' => 'popular', 'count' => NB_TWEET_RAMENER, 'include_entities' => false]);
+	$results_spam = $connection->get('search/tweets', [ 'q' => 'Nintendo OR #AnimalCrossing', 'lang' => 'fr', 'result_type' => 'popular', 'count' => NB_TWEET_RAMENER, 'include_entities' => false]);
 	testeRequete($connection->getLastHttpCode(), __LINE__ );
 	foreach ($results_spam->statuses as $tweet_spam) 
 	{
 		//RT le tweet
 		$connection->post('statuses/retweet', [ 'id' => $tweet_spam->id_str]);
-		testeRequete($connection->getLastHttpCode(), __LINE__ );
-		elog('retweet spam: <a target=_blank href=https://twitter.com/' . $tweet_spam->user->screen_name . '/status/' . $tweet_spam->id_str . '>' . $tweet_spam->id_str . '</a>');
+		elog('RT SPAM: ' . $tweet_spam->id_str);
 	}	
 }
 
