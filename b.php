@@ -6,20 +6,20 @@
 function elog($m, $t=0)
 {
 	//tempo aléatoire
-	if ($t == 0) $t = rand(2,5);
+	if ($t == 0) $t = rand(1,4);
 	//pause pour passer sous les radars
 	sleep($t);
 	$m = date('d/m/Y à H:i ') . $m;
 	//sortie texte
 	if (PROD === false) echo "<font color=gray>$m</font><br>\n";
 	//sortie fichier
-	else @file_put_contents(FILE_log, strip_tags($m) . PHP_EOL, FILE_APPEND);
+	//else @file_put_contents(FILE_log, strip_tags($m) . PHP_EOL, FILE_APPEND);
 }
 
 //retourne un smiley sympa
 function getsmil()
 {
-	// source : https://freek.dev/376-using-emoji-in-phphttps://freek.dev/376-using-emoji-in-php
+	// source : https://freek.dev/376-using-emoji-in-php
 	$smilies = ["\u{1F603}", "\u{1F340}" , "\u{1F600}", "\u{1F4AA}", "\u{1F44D}", "\u{1F64C}", "\u{1F601}"];
 	return $smilies[rand(0,count($smilies)-1)];
 }
@@ -27,10 +27,9 @@ function getsmil()
 //vérifie la bonne exécution des requêtes
 function testeRequete($c, $l)
 {
-	$encodage = "Content-Type: text/plain; charset=\"utf-8\" Content-Transfer-Encoding: 8bit\n\r";
 	if ($c != 200) 
 	{
-		mail(MAIL_WEBMASTER, "Rapport du bot twitter : erreur $c", "Une erreur a été rencontrée: erreur $c à la ligne $l\r\nhttps://".$_SERVER['HTTP_HOST'].$_SERVER['REQUEST_URI'],$encodage);	
+		mail(MAIL_WEBMASTER, "Rapport du bot twitter : erreur $c", "Une erreur a été rencontrée: erreur $c à la ligne $l\r\nhttps://".$_SERVER['HTTP_HOST'].$_SERVER['REQUEST_URI'],ENCODAGE);	
 		die("😢");
 	}
 }
@@ -48,7 +47,6 @@ use Abraham\TwitterOAuth\TwitterOAuth;
 //se connecte à tweeter
 $connection = new TwitterOAuth(CONSUMER_KEY, CONSUMER_SECRET, ACCESS_TOKEN, ACCESS_TOKEN_SECRET);
 
-
 //cherche #concours 
 $results = $connection->get('search/tweets', [ 'tweet_mode' => 'extended', 'q' => SRCH_t, 'lang' => 'fr', 'result_type' => 'popular', 'count' => 50, 'include_entities' => false ] ); 
 testeRequete($connection->getLastHttpCode(), __LINE__ );
@@ -56,9 +54,12 @@ testeRequete($connection->getLastHttpCode(), __LINE__ );
 //quelques variables initialisées
 $hashtags_inutiles = array("#RT", "#FOLLOW", "#FAV", "#CONCOURS", "#PAYPAL", "#GIVEAWAY");
 $nb_concours = 0;
+//mentions recherchées dans un tweet
 if (defined('MENTIONS')) $mentions_r = explode(',', MENTIONS);
 else $mentions_r = array();
+//liste des tweetos à mentionner
 if (defined('TWEETOS')) $tab_noms_tweetos = explode(',', TWEETOS);
+//listes de tweetos à ignorer
 $tab_listes_ignores = array();
 if (defined('LISTE_IGNORES')) 
 {
@@ -89,7 +90,6 @@ foreach ($results->statuses as $tweet)
 	//regarde si le tweetos est ignoré depuis les listes, si oui on passe au tweet suivant
 	if (in_array($tweet->user->screen_name, $tab_listes_ignores)) 
 	{
-		//echo $tweet->full_text . "<br>par " . $tweet->user->screen_name . " ignoré !<br>";
 		continue;
 	}
 	
@@ -120,7 +120,6 @@ foreach ($results->statuses as $tweet)
 	
 	if (defined('MENTIONS')) 
 	{
-		//$mentions_r = explode(',', MENTIONS);
 		foreach ($mentions_r as $val_r) 
 		{
 			if (stripos($texte, $val_r)) 
@@ -137,7 +136,6 @@ foreach ($results->statuses as $tweet)
 		//amis définis en dur dans la configuration
 		if (defined('TWEETOS')) 
 		{
-			//$tab_noms_tweetos = explode(',', TWEETOS);
 			$nom =  $tab_noms_tweetos[rand(0, count($tab_noms_tweetos)-1)];
 		}
 		else
@@ -214,6 +212,9 @@ foreach ($results->statuses as $tweet)
 		}
 	}
 	
+	//envoi d'un mail
+	//mail(MAIL_WEBMASTER, "Vous avez participé au concours de " . $tweet->user->screen_name, $texte, ENCODAGE);	
+	
 	//on a posté autant que désiré, on sort
 	if (NB_TWEET_RAMENER == $nb_concours) break;
 }
@@ -221,17 +222,31 @@ foreach ($results->statuses as $tweet)
 //on a pas participé à un concours
 if ($nb_concours == 0) 
 {
-	//cherche tout sauf #concours, on va spammer du contenu populaire
+	//on va spammer du contenu populaire
 	$results_spam = $connection->get('search/tweets', [ 'q' => 'Nintendo OR #AnimalCrossing', 'lang' => 'fr', 'result_type' => 'popular', 'count' => NB_TWEET_RAMENER, 'include_entities' => false]);
 	testeRequete($connection->getLastHttpCode(), __LINE__ );
 	foreach ($results_spam->statuses as $tweet_spam) 
 	{
 		//RT le tweet
 		$connection->post('statuses/retweet', [ 'id' => $tweet_spam->id_str]);
-		elog('RT SPAM: ' . $tweet_spam->id_str);
+		elog('RT SPAM: ' . $tweet_spam->id_str . ', ' . substr($tweet_spam->text, 0, 64));
 	}	
 }
 
-//pour le fun
+//récupère les derniers tweets et envoie un mail quotidien à 23h3X
+if (substr(date('Hi'),0,3) == '233')
+{
+	$liste_tweet = "Bonjour, voici la liste des concours auquel votre bot twitter a participé pour vous :\r\n";
+	$tday = $connection->get('statuses/user_timeline', [ 'screen_name' => USER_t, 'trim_user' => true]);
+	foreach ($tday as $tday_tweet) 
+	{
+		//que les tweet du jour
+		if (date("dmy", strtotime($tday_tweet->created_at)) == date("dmy")) $liste_tweet .= 'à ' . date("H:i", strtotime($tday_tweet->created_at)) . ': ' . $tday_tweet->user->screen_name . " twitte " . $tday_tweet->text . ":\r\n";
+	}
+	//envoi d'un mail
+	mail(MAIL_WEBMASTER, "Vous avez participé à ces concours twitter", $liste_tweet, ENCODAGE);	
+}
+
+//pour le fun, affiche un smiley
 echo getsmil();
 ?>
