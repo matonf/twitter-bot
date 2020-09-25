@@ -6,14 +6,14 @@
 function elog($m, $t=0)
 {
 	//tempo aléatoire
-	if ($t == 0) $t = rand(1,4);
+	if ($t == 0) $t = rand(1,3);
 	//pause pour passer sous les radars
 	sleep($t);
 	$m = date('d/m/Y à H:i ') . $m;
 	//sortie texte
 	if (PROD === false) echo "<font color=gray>$m</font><br>\n";
 	//sortie fichier
-	//else @file_put_contents(FILE_log, strip_tags($m) . PHP_EOL, FILE_APPEND);
+	if (LOG) @file_put_contents(FILE_log, strip_tags($m) . PHP_EOL, FILE_APPEND);
 }
 
 //retourne un smiley sympa
@@ -48,7 +48,7 @@ use Abraham\TwitterOAuth\TwitterOAuth;
 $connection = new TwitterOAuth(CONSUMER_KEY, CONSUMER_SECRET, ACCESS_TOKEN, ACCESS_TOKEN_SECRET);
 
 //cherche #concours 
-$results = $connection->get('search/tweets', [ 'tweet_mode' => 'extended', 'q' => SRCH_t, 'lang' => 'fr', 'result_type' => 'popular', 'count' => 50, 'include_entities' => false ] ); 
+$results = $connection->get('search/tweets', [ 'tweet_mode' => 'extended', 'q' => SRCH_t, 'lang' => 'fr', 'result_type' => 'mixed', 'count' => 50, 'include_entities' => false ] ); 
 testeRequete($connection->getLastHttpCode(), __LINE__ );
 
 //quelques variables initialisées
@@ -92,6 +92,14 @@ foreach ($results->statuses as $tweet)
 	{
 		continue;
 	}
+
+
+    //ignore le tweet si le compte est pas assez populaire
+  	if ($tweet->user->followers_count < 5000) 
+	{
+        //echo "saute " . $tweet->user->screen_name . " car il a " . $tweet->user->followers_count . " amis<br>";
+        continue;
+    }
 	
 	//récupère le texte pour plusieurs traitements ultérieurs
 	$texte = $tweet->full_text;
@@ -212,8 +220,6 @@ foreach ($results->statuses as $tweet)
 		}
 	}
 	
-	//envoi d'un mail
-	//mail(MAIL_WEBMASTER, "Vous avez participé au concours de " . $tweet->user->screen_name, $texte, ENCODAGE);	
 	
 	//on a posté autant que désiré, on sort
 	if (NB_TWEET_RAMENER == $nb_concours) break;
@@ -233,18 +239,19 @@ if ($nb_concours == 0)
 	}	
 }
 
-//récupère les derniers tweets et envoie un mail quotidien à 23h3X
+//récupère les derniers retweets et envoie un mail quotidien à 23h3X
 if (substr(date('Hi'),0,3) == '233')
 {
-	$liste_tweet = "Bonjour, voici la liste des concours auquel votre bot twitter a participé pour vous :\r\n";
-	$tday = $connection->get('statuses/user_timeline', [ 'screen_name' => USER_t, 'trim_user' => true]);
+	$liste_tweet = null;
+	$intro_mail = "Bonjour,\r\n\r\nVotre bot twitter a participé à ces concours :\r\n";
+	$tday = $connection->get('statuses/user_timeline', [ 'screen_name' => USER_t, 'trim_user' => false]);
 	foreach ($tday as $tday_tweet) 
 	{
-		//que les tweet du jour
-		if (date("dmy", strtotime($tday_tweet->created_at)) == date("dmy")) $liste_tweet .= 'à ' . date("H:i", strtotime($tday_tweet->created_at)) . ': ' . $tday_tweet->user->screen_name . " twitte " . $tday_tweet->text . ":\r\n";
+		//que les retweet du jour
+		if (date("dmy", strtotime($tday_tweet->created_at)) == date("dmy") && isset($tday_tweet->retweeted_status)) $liste_tweet .= '- ' . $tday_tweet->retweeted_status->user->screen_name . "\r\n";
 	}
 	//envoi d'un mail
-	mail(MAIL_WEBMASTER, "Vous avez participé à ces concours twitter", $liste_tweet, ENCODAGE);	
+	if ($liste_tweet) mail(MAIL_WEBMASTER, "Vous avez participé à ces concours twitter", $intro_mail . $liste_tweet, ENCODAGE);	
 }
 
 //pour le fun, affiche un smiley
