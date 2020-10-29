@@ -48,7 +48,7 @@ use Abraham\TwitterOAuth\TwitterOAuth;
 $connection = new TwitterOAuth(CONSUMER_KEY, CONSUMER_SECRET, ACCESS_TOKEN, ACCESS_TOKEN_SECRET);
 
 //cherche #concours 
-$results = $connection->get('search/tweets', [ 'tweet_mode' => 'extended', 'q' => SRCH_t, 'lang' => 'fr', 'result_type' => 'mixed', 'count' => 50, 'include_entities' => false ] ); 
+$results = $connection->get('search/tweets', [ 'tweet_mode' => 'extended', 'q' => SRCH_t . ' filter:safe', 'lang' => 'fr', 'result_type' => 'mixed', 'count' => 50, 'include_entities' => false ] ); 
 testeRequete($connection->getLastHttpCode(), __LINE__ );
 
 //quelques variables initialisées
@@ -97,7 +97,6 @@ foreach ($results->statuses as $tweet)
     //ignore le tweet si le compte est pas assez populaire
   	if ($tweet->user->followers_count < 5000) 
 	{
-        //echo "saute " . $tweet->user->screen_name . " car il a " . $tweet->user->followers_count . " amis<br>";
         continue;
     }
 	
@@ -110,6 +109,7 @@ foreach ($results->statuses as $tweet)
 	//détection d'erreur force à enchaîner la boucle
 	if (count($retour_post->errors)) 
 	{
+		sleep(1);
 		continue;
 	}
 	testeRequete($connection->getLastHttpCode(), __LINE__ );
@@ -240,6 +240,7 @@ if ($nb_concours == 0)
 }
 
 //récupère les derniers retweets et envoie un mail quotidien à 23h3X
+/*
 if (substr(date('Hi'),0,3) == '233')
 {
 	$liste_tweet = null;
@@ -253,6 +254,7 @@ if (substr(date('Hi'),0,3) == '233')
 	//envoi d'un mail
 	if ($liste_tweet) mail(MAIL_WEBMASTER, "Vous avez participé à ces concours twitter", $intro_mail . $liste_tweet, ENCODAGE);	
 }
+*/
 
 //pour le fun, affiche un smiley
 echo getsmil();
