@@ -3,10 +3,8 @@
 // https://developer.twitter.com/en/docs/tweets/data-dictionary/overview/intro-to-tweet-json
 
 //debug 
-function elog($m, $t=0)
+function elog($m, $t=1)
 {
-	//tempo aléatoire
-	if ($t == 0) $t = rand(1,3);
 	//pause pour passer sous les radars
 	sleep($t);
 	$m = date('d/m/Y à H:i ') . $m;
@@ -29,8 +27,8 @@ function testeRequete($c, $l)
 {
 	if ($c != 200) 
 	{
-		mail(MAIL_WEBMASTER, "Rapport du bot twitter : erreur $c", "Une erreur a été rencontrée: erreur $c à la ligne $l\r\nhttps://".$_SERVER['HTTP_HOST'].$_SERVER['REQUEST_URI'],ENCODAGE);	
-		die("😢");
+		elog("Une erreur a été rencontrée: erreur $c à la ligne $l 😢");
+		die();
 	}
 }
 
@@ -48,7 +46,8 @@ use Abraham\TwitterOAuth\TwitterOAuth;
 $connection = new TwitterOAuth(CONSUMER_KEY, CONSUMER_SECRET, ACCESS_TOKEN, ACCESS_TOKEN_SECRET);
 
 //cherche #concours 
-$results = $connection->get('search/tweets', [ 'tweet_mode' => 'extended', 'q' => SRCH_t . ' filter:safe', 'lang' => 'fr', 'result_type' => 'mixed', 'count' => 50, 'include_entities' => false ] ); 
+//Paris : 'geocode' => '2.352222,48.856614,900 km' ,
+$results = $connection->get('search/tweets', [ 'tweet_mode' => 'extended', 'q' => SRCH_t . ' filter:safe', 'lang' => 'fr', 'result_type' => 'mixed', 'count' => 70, 'include_entities' => false ] ); 
 testeRequete($connection->getLastHttpCode(), __LINE__ );
 
 //quelques variables initialisées
@@ -59,8 +58,10 @@ if (defined('MENTIONS')) $mentions_r = explode(',', MENTIONS);
 else $mentions_r = array();
 //liste des tweetos à mentionner
 if (defined('TWEETOS')) $tab_noms_tweetos = explode(',', TWEETOS);
+
 //listes de tweetos à ignorer
 $tab_listes_ignores = array();
+
 if (defined('LISTE_IGNORES')) 
 {
 	$tab_listes = explode(',', LISTE_IGNORES);
@@ -73,9 +74,11 @@ if (defined('LISTE_IGNORES'))
 		{
 			//les ajoute au tableau général
 			array_push($tab_listes_ignores, $ignore->screen_name);
+			//echo "$ignore->screen_name,";
 		}
 	}
 }
+
 
 //parcours des tweet à faire
 foreach ($results->statuses as $tweet) 
@@ -90,13 +93,14 @@ foreach ($results->statuses as $tweet)
 	//regarde si le tweetos est ignoré depuis les listes, si oui on passe au tweet suivant
 	if (in_array($tweet->user->screen_name, $tab_listes_ignores)) 
 	{
+		elog($tweet->user->screen_name . " est ignoré", 0);
 		continue;
 	}
 
-
     //ignore le tweet si le compte est pas assez populaire
-  	if ($tweet->user->followers_count < 5000) 
+  	if ($tweet->user->followers_count < 9000) 
 	{
+		elog($tweet->user->screen_name . " n'a pas assez d'amis", 0);
         continue;
     }
 	
@@ -109,7 +113,7 @@ foreach ($results->statuses as $tweet)
 	//détection d'erreur force à enchaîner la boucle
 	if (count($retour_post->errors)) 
 	{
-		sleep(1);
+		elog('Déjà participé au concours: ' . $tweet->id_str, 0);
 		continue;
 	}
 	testeRequete($connection->getLastHttpCode(), __LINE__ );
@@ -148,11 +152,11 @@ foreach ($results->statuses as $tweet)
 		}
 		else
 		{
-			//amis qui me suivent
+			//amis qui me suivent, liste dynamique
 			$results_followers = $connection->get('followers/ids', [ 'user_id' => USER_t ]);
 			testeRequete($connection->getLastHttpCode(), __LINE__ );
 			$followers = $results_followers->ids;
-			//collecte des données sur le follower		
+			//collecte des données sur le followertiré au hasard	
 			$follower = $connection->get('users/show', [ 'user_id' => $followers[rand(0,count($followers)-1)], 'include_entities' => false ]);
 			testeRequete($connection->getLastHttpCode(), __LINE__ );
 			$nom = '@' . $follower->screen_name;
@@ -161,56 +165,42 @@ foreach ($results->statuses as $tweet)
 	if (! is_null($nom)) $nom_commentaire = " j'invite à participer " . $nom;
 	else $nom_commentaire = null;
 		
-	//4-FOLLOW le compte
+	//4-FOLLOW le compte automatiquement
 	$connection->post('friendships/create', [ 'screen_name' => $tweet->user->screen_name]);
 	elog('FOLLOW: ' . $tweet->user->screen_name);
 	
-	//5-FOLLOW les comptes associés dans le tweet
-	//raz initiales
-	$compter_nom = false;
-	$compter_hashtag = false;
-	$nom = null;
-	$hashtag = null;
-	//parcours des tweets retenus
-	for ($j=0; $j<strlen($texte); $j++)
+	//5-FOLLOW les comptes associés dans le tweet 
+	$offset = 0;
+	//recherche les @
+	while ($offset !== FALSE)
 	{
-		$lettre = substr($texte, $j,1);
-		//détecte un nom d'utilisateur
-		if ($lettre == '@')
-		{
-				$nom = null;
-				$compter_nom = true;
-		}
-		if ($lettre == '#')
-		{
-				$hashtag .= ' ';
-				$compter_hashtag = true;
-		}				
-		
-		//détecte la fin du nom
-		if ($lettre ==  "\n" || $lettre ==  '!' || $lettre ==  ':' ||  $lettre ==  '.' ||  $lettre ==  ',' || $lettre ==  ' ' || ($j == strlen($texte)-1))
-		{
-				if ($compter_nom) 
-				{
-					$connection->post('friendships/create', [ 'screen_name' => $nom]);
-					elog('FOLLOW: ' . $nom);
-				}
-				//raz
-				$compter_nom = false;
-				$compter_hashtag = false;
-		}
-		
-		if ($compter_nom && $lettre != '@') $nom .= $lettre;
-		if ($compter_hashtag) $hashtag .= $lettre;
+		$offset = stripos($texte,'@',$offset);
+		if ($offset === FALSE) break;
+		$offset++;
+		//filtre @ (a-z0-9_)
+		$noma = trim(strtolower(substr($texte, $offset, strspn(strtolower($texte),"abcdefghijklmnopqrstuvwxyz1234567890_",$offset))));
+		$connection->post('friendships/create', [ 'screen_name' => $noma]);
+		elog('FOLLOW: ' . $noma);
 	}
-	
+
 	//3 bis-poste un commentaire avec des mentions @XX @YY @ZZ
 	if ($mentionner)
 	{
 		if (! is_null($nom_commentaire))
 		{
+			$offset = 0;
+			//recherche les #
+			while ($offset !== FALSE)
+			{
+				$offset = stripos($texte,'#',$offset);
+				if ($offset === FALSE) break;
+				$offset++;
+				//filtre les hashtag (a-z0-9_)
+				$hash = trim(strtolower(substr($texte, $offset, strspn(strtolower($texte),"abcdefghijklmnopqrstuvwxyz1234567890_",$offset))));
+				$hashtag .= ' #' . $hash;
+			}
 			//purge quelques hastags inutiles
-			$hashtag = trim(str_ireplace($hashtags_inutiles, "", $hashtag));
+			$hashtag = trim(str_ireplace($hashtags_inutiles, '', $hashtag));
 			//format du message : @nom_du_posteur_original @noms_des_amis #hastags
 			if ($hashtag == "") $hashtag = getsmil();
 			$messg = '@' . $tweet->user->screen_name . ' ' . trim($nom_commentaire) . ' ' . trim($hashtag);
@@ -220,42 +210,25 @@ foreach ($results->statuses as $tweet)
 		}
 	}
 	
-	
 	//on a posté autant que désiré, on sort
 	if (NB_TWEET_RAMENER == $nb_concours) break;
 }
 
-//on a pas participé à un concours
+//on a pas participé à un seul concours
 if ($nb_concours == 0) 
 {
 	//on va spammer du contenu populaire
-	$results_spam = $connection->get('search/tweets', [ 'q' => 'Nintendo OR #AnimalCrossing', 'lang' => 'fr', 'result_type' => 'popular', 'count' => NB_TWEET_RAMENER, 'include_entities' => false]);
+	$results_spam = $connection->get('search/tweets', [ 'q' => 'Nintendo', 'lang' => 'fr', 'result_type' => 'popular', 'count' => NB_TWEET_RAMENER, 'include_entities' => false]);
 	testeRequete($connection->getLastHttpCode(), __LINE__ );
 	foreach ($results_spam->statuses as $tweet_spam) 
 	{
 		//RT le tweet
 		$connection->post('statuses/retweet', [ 'id' => $tweet_spam->id_str]);
-		elog('RT SPAM: ' . $tweet_spam->id_str . ', ' . substr($tweet_spam->text, 0, 64));
+		elog('RT SPAM: ' . $tweet_spam->id_str);
+		$nb_concours++;
 	}	
 }
 
-//récupère les derniers retweets et envoie un mail quotidien à 23h3X
-/*
-if (substr(date('Hi'),0,3) == '233')
-{
-	$liste_tweet = null;
-	$intro_mail = "Bonjour,\r\n\r\nVotre bot twitter a participé à ces concours :\r\n";
-	$tday = $connection->get('statuses/user_timeline', [ 'screen_name' => USER_t, 'trim_user' => false]);
-	foreach ($tday as $tday_tweet) 
-	{
-		//que les retweet du jour
-		if (date("dmy", strtotime($tday_tweet->created_at)) == date("dmy") && isset($tday_tweet->retweeted_status)) $liste_tweet .= '- ' . $tday_tweet->retweeted_status->user->screen_name . "\r\n";
-	}
-	//envoi d'un mail
-	if ($liste_tweet) mail(MAIL_WEBMASTER, "Vous avez participé à ces concours twitter", $intro_mail . $liste_tweet, ENCODAGE);	
-}
-*/
-
-//pour le fun, affiche un smiley
-echo getsmil();
+//pour le fun, affiche des smileys
+echo str_repeat(getsmil(), $nb_concours);
 ?>
