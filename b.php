@@ -14,12 +14,24 @@ function elog($m, $t=1)
 	if (LOG) @file_put_contents(FILE_log, strip_tags($m) . PHP_EOL, FILE_APPEND);
 }
 
-//retourne un smiley sympa
-function getsmil()
+//retourne un smiley sympa parmi une liste courte
+function getsmilLimited()
 {
 	// source : https://freek.dev/376-using-emoji-in-php
 	$smilies = ["\u{1F603}", "\u{1F340}" , "\u{1F600}", "\u{1F4AA}", "\u{1F44D}", "\u{1F64C}", "\u{1F601}"];
 	return $smilies[rand(0,count($smilies)-1)];
+}
+
+//un smiley aléatoire si $n est null
+function getsmil($n=null)
+{
+	$smilies = require_once('emojiList.php');
+	if (is_null($n)) 
+	{
+		$smil_val = array_values($smilies);
+		return $smil_val[rand(0,count($smil_val)-1)];
+	}
+	else return $smilies[$n];
 }
 
 //vérifie la bonne exécution des requêtes
@@ -45,9 +57,12 @@ use Abraham\TwitterOAuth\TwitterOAuth;
 //se connecte à tweeter
 $connection = new TwitterOAuth(CONSUMER_KEY, CONSUMER_SECRET, ACCESS_TOKEN, ACCESS_TOKEN_SECRET);
 
+//récupère les comptes bloqués
+$tab_blocks = $connection->get('blocks/ids');
+testeRequete($connection->getLastHttpCode(), __LINE__ );
+
 //cherche #concours 
-//Paris : 'geocode' => '2.352222,48.856614,900 km' ,
-$results = $connection->get('search/tweets', [ 'tweet_mode' => 'extended', 'q' => SRCH_t . ' filter:safe', 'lang' => 'fr', 'result_type' => 'mixed', 'count' => 70, 'include_entities' => false ] ); 
+$results = $connection->get('search/tweets', [ 'tweet_mode' => 'extended', 'q' => SRCH_t . ' filter:safe', 'lang' => 'fr', 'result_type' => 'popular', 'count' => 70, 'include_entities' => false ] ); 
 testeRequete($connection->getLastHttpCode(), __LINE__ );
 
 //quelques variables initialisées
@@ -59,11 +74,11 @@ else $mentions_r = array();
 //liste des tweetos à mentionner
 if (defined('TWEETOS')) $tab_noms_tweetos = explode(',', TWEETOS);
 
-//listes de tweetos à ignorer
-$tab_listes_ignores = array();
-
+$tab_liste_tweet = array();
+//listes de tweetos à ignorer via la conf
 if (defined('LISTE_IGNORES')) 
 {
+	$tab_listes_ignores = array();
 	$tab_listes = explode(',', LISTE_IGNORES);
 	foreach ($tab_listes as $liste)
 	{
@@ -74,11 +89,15 @@ if (defined('LISTE_IGNORES'))
 		{
 			//les ajoute au tableau général
 			array_push($tab_listes_ignores, $ignore->screen_name);
-			//echo "$ignore->screen_name,";
 		}
 	}
+	elog('conf des ignorés chargée');
 }
-
+else //ou un fichier plat
+{
+	$tab_listes_ignores = @file('ignores.txt');
+	elog('fichier à plat des ignorés chargé:' . count($tab_listes_ignores));
+}
 
 //parcours des tweet à faire
 foreach ($results->statuses as $tweet) 
@@ -89,6 +108,22 @@ foreach ($results->statuses as $tweet)
 		//réaffecte le tweet original
 		$tweet = $tweet->retweeted_status;
 	}
+
+	//si le tweeter est bloqué depuis le compte twitter, on l'ignore
+	if (in_array($tweet->user->id, $tab_blocks->ids))
+	{
+		elog($tweet->user->screen_name . " est bloqué", 0);
+		continue;
+	}
+
+	//à cause des réaffectations des tweet, on peut travailler sur le même une seconde fois
+	if (in_array($tweet->id_str, $tab_liste_tweet))
+	{
+		//on l'évite
+		continue;
+	}
+	//sinon on l'ajoute aux vus
+	array_push($tab_liste_tweet, $tweet->id_str);
 	
 	//regarde si le tweetos est ignoré depuis les listes, si oui on passe au tweet suivant
 	if (in_array($tweet->user->screen_name, $tab_listes_ignores)) 
@@ -98,11 +133,18 @@ foreach ($results->statuses as $tweet)
 	}
 
     //ignore le tweet si le compte est pas assez populaire
-  	if ($tweet->user->followers_count < 9000) 
+  	if ($tweet->user->followers_count < 5000) 
 	{
 		elog($tweet->user->screen_name . " n'a pas assez d'amis", 0);
         continue;
     }
+
+	//ignore le tweet si le compte est pas vérifié (badge bleu) 
+	if ($tweet->user->verified === FALSE) 
+	{
+		elog($tweet->user->screen_name . " n'est pas vérifié", 0);
+		continue;
+	}
 	
 	//récupère le texte pour plusieurs traitements ultérieurs
 	$texte = $tweet->full_text;
@@ -218,7 +260,7 @@ foreach ($results->statuses as $tweet)
 if ($nb_concours == 0) 
 {
 	//on va spammer du contenu populaire
-	$results_spam = $connection->get('search/tweets', [ 'q' => 'Nintendo', 'lang' => 'fr', 'result_type' => 'popular', 'count' => NB_TWEET_RAMENER, 'include_entities' => false]);
+	$results_spam = $connection->get('search/tweets', [ 'q' => 'Nintendo', 'lang' => 'fr', 'result_type' => 'popular', 'count' => 1, 'include_entities' => false]);
 	testeRequete($connection->getLastHttpCode(), __LINE__ );
 	foreach ($results_spam->statuses as $tweet_spam) 
 	{
@@ -229,6 +271,11 @@ if ($nb_concours == 0)
 	}	
 }
 
-//pour le fun, affiche des smileys
+//pour le fun...
+//change le profil
+$colAleatoire = random_int(0,9);
+$connection->post('account/update_profile', [ 'name' => USER_t . ' ' . getsmil(), 'profile_link_color' =>  "$colAleatoire$colAleatoire$colAleatoire" ]);
+testeRequete($connection->getLastHttpCode(), __LINE__ );
+//affiche des smileys
 echo str_repeat(getsmil(), $nb_concours);
 ?>
